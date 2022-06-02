@@ -14,14 +14,14 @@ git config --global user.name "$username"
 echo "Enter your user.email for git config..."
 read email
 git config --global user.email "$email"
-echo "Generating ssh keys..."
-ssh-keygen -o -f $HOME'/.ssh/rsa'
-echo -e " \nThis is your ssh key please copy it...\n"
-cat $HOME'/.ssh/rsa.pub'
-echo -e "\nPlease paste the generated ssh keys here and save the key at the following url..."
-echo "https://gitlab.com/-/profile/keys"
-echo "Have you pasted your ssh key to gitlab press y/n for [Yes/No]"
-read answer
+# echo "Generating ssh keys..."
+# ssh-keygen -o -f $HOME'/.ssh/rsa'
+# echo -e " \nThis is your ssh key please copy it...\n"
+# cat $HOME'/.ssh/rsa.pub'
+# echo -e "\nPlease paste the generated ssh keys here and save the key at the following url..."
+# echo "https://gitlab.com/-/profile/keys"
+# echo "Have you pasted your ssh key to gitlab press y/n for [Yes/No]"
+# read answer
 
 # Colors definition
 echo '
@@ -78,6 +78,23 @@ fi
 fi
 ##Golang installation done
 
+##Mysql installation
+mysql=$(mysql --version)
+if [ -z "$mysql" ];
+then 
+echo "Mysql is not installed...."
+echo "Installing mysql..."
+apt update
+apt upgrade
+apt install mysql-server
+mysql --version
+mysql_secure_installation
+service mysql start
+else "Mysql is already installed...."
+fi
+
+##Mysql installation done...
+
 #Project setup start...
 #go to GOPATH
 for env in $goenv
@@ -109,18 +126,8 @@ echo "Repository is not found.."
 exit
 fi
 #Reading project name...
-echo "Please enter the git repository https url example:https://gitlab.com/<your-username>/<your repositoryname>.git"
-read giturl
-git clone $giturl
-
-IFS=' |/:@' read -ra array_1 <<< "$giturl"
-domain=${array_1[1]}
-name=${array_1[2]}
-foldername=${array_1[3]}
-IFS=' |.' read -ra array <<< "$foldername"
-projectname=${array[0]}
-
-#Reading project name...
+echo "Enter the name of folder for your project..."
+read projectname
 lowercaseprojectname=`echo $projectname  | tr '[A-Z]' '[a-z]'`
 FILE=crud
 if [ -d "$FILE" ]; then
@@ -130,9 +137,16 @@ echo "Repository is not found"
 exit
 fi
 cd $lowercaseprojectname
-
-#set git origin 
+echo "Please enter the git repository https url example:https://gitlab.com/$username/$projectname.git"
+read giturl  
 git remote set-url origin $giturl
+IFS='//' #setting comma as delimiter  
+read -a strarr <<<"$giturl" #reading str as an array as tokens separated by IFS  
+domain=${strarr[2]}
+name=${strarr[3]}
+# echo "Please enter the new branch name except main/master..."
+# read branchname
+# git checkout -b $branchname
 cd src
 # touch main.go
 echo 'package main
@@ -212,7 +226,7 @@ func CORSMiddleware() gin.HandlerFunc {
 }' > main.go
 
 #Reading controller filename
-echo "Please enter the module name..."
+echo "Please enter the folder name under controller folder..."
 read packagename
 lowercasepackagename=`echo $packagename  | tr '[A-Z]' '[a-z]'`
 cd controller
@@ -417,6 +431,25 @@ func GetSharedConnection() *gorm.DB {
 	return db
 }' > mysql.go
 cd ..
+cd cron
+echo 'package cron
+
+import (
+	"'$domain'/'$name'/'$lowercaseprojectname'/src/config"
+)
+
+//Cron struct
+type Cron struct{}
+
+//Init - init Cron job
+func (ct *Cron) Init() {
+	if config.AppConfig.Environment == "Development" {
+		return
+	}
+
+}' > cron.go
+cd ..
+path=$PWD
 cd config
 echo 'package config
 
@@ -433,7 +466,7 @@ var AppConfig *Config
 
 //Init - initialize config
 func Init() error {
-	if _, err := toml.DecodeFile("'$PWD'/'$lowercaseprojectname'/config-sample.toml", &AppConfig); err != nil {
+	if _, err := toml.DecodeFile("'$path'/'$lowercaseprojectname'/config-sample.toml", &AppConfig); err != nil {
 		log.Println(" %s", err)
 		return err
 	}
@@ -558,6 +591,19 @@ func (u *'$controllername') Delete'$controllername'('$lowercasepackagename'ID ui
 ' > $lowercasepackagename.go
 cd ..
 cd migration
+echo 'package migration
+
+import (
+	"'$domain'/'$name'/'$lowercaseprojectname'/src/database"
+	"'$domain'/'$name'/'$lowercaseprojectname'/src/model"
+)
+
+//Migrate to migrate the models
+func Migrate() {
+	dbconn := database.GetSharedConnection()
+	//DB migration
+	dbconn.Debug().AutoMigrate(&model.'$controllername'{})
+}' > migration.go
 sed -i '/DB migration/a \dbconn.Debug().AutoMigrate(&model.'$controllername'{})' migration.go
 
 cd ../..    
@@ -570,7 +616,7 @@ git add .
 git commit -m "First commit..."
 echo "Enter your username and password to upload on git..."
 branch=$(git branch | sed -nr 's/\*\s(.*)/\1/p')
-git push -u origin $branch
+git push origin $branch
 echo "Folder created successfully..."
 exec bash
 
@@ -578,192 +624,24 @@ exec bash
 #------------------------------------------------------------Module part---------------------------------------------------------------------------#
 else
 #New module creation part
-#Project setup start...
-#go to GOPATH
-for env in $goenv
-do
-case $env in
 
-  *"GOPATH="*)
-    gopath=$env
-    ;;
-esac
-done
-IFS='"' #setting comma as delimiter  
-read -a strarr <<<"$gopath" #reading str as an array as tokens separated by IFS  
-go_path=${strarr[1]}
-cd $go_path
-
-FILE=crud
-if [ ! -d "$FILE" ]; then
-git clone https://gitlab.com/abhishek.k8/crud.git
-fi
-cd crud
-echo "Please enter the git repository https url example:git@gitlab.com:<your-username>/<project-name>.git"
-read giturl
-git clone $giturl
-
-IFS=' |/:@' read -ra array_1 <<< "$giturl"
-domain=${array_1[1]}
-name=${array_1[2]}
-foldername=${array_1[3]}
-IFS=' |.' read -ra array <<< "$foldername"
-projectname=${array[0]}
-
-#Reading project name...
-lowercaseprojectname=`echo $projectname  | tr '[A-Z]' '[a-z]'`
-
-#set git remote origin
-git remote set-url origin $giturl
-
+# Go to folder path
+echo "Please enter the path of the folder of your project example: /home/ubuntu/<name of your project folder>"
+read folderpath
+cd $folderpath
 echo "Please enter module name.."
 read modulename
 lowercasemodulename=`echo $modulename | tr '[A-Z]' '[a-z]'`
 controllername=`echo $modulename | sed -r 's/(^|_)([a-z])/\U\2/g'`
 cd src
-
-echo 'package main
-
-import (
-	"strings"
-
-	"github.com/gin-gonic/gin"
-	log "github.com/sirupsen/logrus"
-	"'$domain'/'$name'/crud/src/config"
-	"'$domain'/'$name'/crud/src/cron"
-
-	"'$domain'/'$name'/crud/src/database"
-	"'$domain'/'$name'/crud/src/migration"
-	route "'$domain'/'$name'/crud/src/routes"
-)
-
-var router *gin.Engine
-
-func main() {
-	//initialize application with toml file
-	if err := config.Init(); err != nil {
-		log.Error(err)
-	}
-	// router = gin.Default()
-	router = gin.New()
-	if strings.ToLower(config.AppConfig.Environment) == "development" {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
-	router.Use(CORSMiddleware())
-	router.Use(gin.Logger())
-	router.Use(gin.Recovery())
-	mainRouter := new(route.MainRouter)
-	appVer := "api/v1"
-	mainRouter.GetRoutes(router.Group(appVer))
-	//start the databse
-	dbconn := database.ConnectSQL()
-	defer dbconn.Close()
-	migration.Migrate()
-
-	//initialting cron
-	var cron = cron.Cron{}
-	cron.Init()
-
-	//server starting log
-	log.Info("Server starting at :: ", config.AppConfig.Server.Host+":"+config.AppConfig.Server.Port)
-
-	router.Run(":" + config.AppConfig.Server.Port)
-}
-
-//CORSMiddleware -
-func CORSMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// c.BindHeader()
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Credentials", "true")
-		// c.Header("Content-Length", "402653184")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, authorization,Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Header("Access-Control-Allow-Methods", "POST , HEAD , PATCH , OPTIONS, GET, PUT, DELETE")
-
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		// c.Writer.Header().Set("Content-Length", "402653184")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token,authorization, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST , HEAD, PATCH , OPTIONS, GET, PUT, DELETE")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-
-		c.Next()
-	}
-}' > main.go
-
-cd database
-echo 'package database
-
-import (
-	"fmt"
-
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/mysql" //You could import dialect
-	configs "'$domain'/'$name'/crud/src/config"
-
-	log "github.com/sirupsen/logrus"
-)
-
-var db *gorm.DB
-
-//ConnectSQL - connect to sql server
-func ConnectSQL() *gorm.DB {
-
-	var err error
-
-	var mysqlHost = fmt.Sprint(configs.AppConfig.Database.User, ":", configs.AppConfig.Database.Password, "@(", configs.AppConfig.Database.Host, ")/", configs.AppConfig.Database.Name, "?parseTime=true")
-	// log.Info(mysqlHost)
-	db, err = gorm.Open("mysql", mysqlHost)
-
-	// if there is an error opening the connection, handle it
-	if err != nil {
-		log.Panic(err.Error())
-	}
-
-	//set limit
-	//db.DB().SetConnMaxLifetime(5 * time.Minute)
-	db.DB().SetMaxIdleConns(10)
-	db.DB().SetMaxOpenConns(40)
-
-	return db
-}
-
-//GetSharedConnection return the database connection
-func GetSharedConnection() *gorm.DB {
-	return db
-}' > mysql.go
-cd ..
-cd config
-echo 'package config
-
-import (
-	"github.com/BurntSushi/toml"
-	log "github.com/sirupsen/logrus"
-)
-
-//Config - config for application
-type Config struct {}
-
-// AppConfig is the configs for the whole application
-var AppConfig *Config
-
-//Init - initialize config
-func Init() error {
-	if _, err := toml.DecodeFile("'$PWD'/crud/config-sample.toml", &AppConfig); err != nil {
-		log.Println(" %s", err)
-		return err
-	}
-
-	return nil
-}' > config.go
-cd ..
+echo "Please enter the go mod module path example:gitlab.com/<your username>/<your project name>"
+read gomodpath  
+IFS='/' #setting comma as delimiter  
+read -a strarr <<<"$gomodpath" #reading str as an array as tokens separated by IFS  
+domain=${strarr[0]}
+name=${strarr[1]}
+projectname=${strarr[2]}
+path=$PWD
 cd controller
 mkdir $lowercasemodulename
 cd $lowercasemodulename
@@ -780,8 +658,8 @@ import (
 	"github.com/asaskevich/govalidator"
 	"github.com/gin-gonic/gin"
 
-	"'$domain'/'$name'/crud/src/model"
-	res "'$domain'/'$name'/crud/src/response"
+	"'$domain'/'$name'/'$projectname'/src/model"
+	res "'$domain'/'$name'/'$projectname'/src/response"
 )
 
 //GetRoutes -
@@ -885,7 +763,7 @@ touch $lowercasemodulename.go
 echo 'package model
 
 import (
-	"'$domain'/'$name'/'$lowercasemodulename'/src/database"
+	"'$domain'/'$name'/'$projectname'/src/database"
 )
 
 type (
@@ -985,72 +863,11 @@ func (u *'$controllername') Delete'$controllername'('$lowercasemodulename'ID uin
 ' > $lowercasemodulename.go
 cd ..
 cd routes
-
-echo 'package route
-
-import (
-	"github.com/gin-gonic/gin"
-	'$lowercasemodulename' "'$domain'/'$name'/crud/src/controller/'$lowercasemodulename'"
-)
-
-type (
-	//IRouter default router
-	IRouter interface {
-		GetRoutes(appGroup *gin.RouterGroup)
-		// InitSubRoutes(appGroup *gin.RouterGroup)
-	}
-	//MainRouter default MainRouter
-	MainRouter struct{}
-)
-
-//GetRoutes -
-func (mc *MainRouter) GetRoutes(appGroup *gin.RouterGroup) {
-	mc.InitSubRoutes(appGroup)
-}
-
-//InitSubRoutes -
-func (mc *MainRouter) InitSubRoutes(appGroup *gin.RouterGroup) {
-	controllerMap := makeControllerMap()
-	for key, cntrlr := range controllerMap {
-		cntrlr.GetRoutes(appGroup.Group(key))
-	}
-}
-
-func makeControllerMap() map[string]IRouter {
-	controllerMap := make(map[string]IRouter)
-    controllerMap["'$lowercasemodulename'"] = &'$lowercasemodulename'.'$controllername'Controller{}
-	return controllerMap
-}
-'> router.go
-sed -i '/github.com/a "'$domain'/'$name'/'$lowercasemodulename'/src/controller/'$lowercasemodulename'"' router.go
+sed -i '/github.com/a "'$domain'/'$name'/'$projectname'/src/controller/'$lowercasemodulename'"' router.go
 sed -i '/return controllerMap/i \controllerMap["'$lowercasemodulename'"] = &'$lowercasemodulename'.'$controllername'Controller{}' router.go
 cd ..
 cd migration
-echo 'package migration
-
-import (
-	"'$domain'/'$name'/crud/src/database"
-	"'$domain'/'$name'/crud/src/model"
-)
-
-//Migrate to migrate the models
-func Migrate() {
-	dbconn := database.GetSharedConnection()
-	//DB migration
-	dbconn.Debug().AutoMigrate(&model.Users{})
-}' > migration.go
-
 sed -i '/DB migration/a \dbconn.Debug().AutoMigrate(&model.'$controllername'{})' migration.go
-cd ../..    
-rm -rf go.mod
-rm -rf go.sum
-#get the mo module package name.
-go mod init $domain'/'$name'/crud'
-go mod tidy
-git add .
-git commit -m "First commit..."
-echo "Enter your username and password to upload on git..."
-branch=$(git branch | sed -nr 's/\*\s(.*)/\1/p')
-git push -u origin $branch
+cd ../..   
 echo "Module created successfully..."
 fi
